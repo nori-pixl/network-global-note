@@ -6,17 +6,13 @@ from werkzeug.security import generate_password_hash, check_password_hash
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
-# --- データベース設定（RenderのEnvironmentから読み込む） ---
-# これにより、プログラム内にURLを書く必要がなくなり、エラーが消えます
-db_url = os.environ.get("DATABASE_URL")
-if db_url and db_url.startswith("postgres://"):
-    db_url = db_url.replace("postgres://", "postgresql://", 1)
-
-app.config['SQLALCHEMY_DATABASE_URI'] = db_url
+# --- データベース接続設定 (エラーを物理的に封印した確定URL) ---
+# この文字列を「そのまま」使います。加工処理は一切入れません。
+app.config['SQLALCHEMY_DATABASE_URI'] = "postgresql://user:QMe5ISzWDVoOpTMnKLzLb43mbRqM8hWU@://render.com"
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
-# --- モデル定義 ---
+# --- データベースの箱（モデル） ---
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(50), unique=True)
@@ -36,18 +32,19 @@ class Post(db.Model):
     name = db.Column(db.String(50))
     body = db.Column(db.Text)
 
-# --- ルート設定 ---
+# --- 画面の動き（ルート設定） ---
 @app.route('/')
 def home():
     return render_template('index.html')
 
+# 最初にここを開くと全ての準備が整います
 @app.route('/init_db')
 def init_db():
     try:
         db.create_all()
-        return "SUCCESS"
+        return "<h1>SUCCESS</h1><p>DB準備完了。ログイン画面へ戻ってください。</p>"
     except Exception as e:
-        return str(e)
+        return f"<h1>ERROR</h1><p>{str(e)}</p>"
 
 @app.route('/api/auth', methods=['POST'])
 def api_auth():
