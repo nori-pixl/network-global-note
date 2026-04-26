@@ -7,3 +7,5 @@ Flask-Login
 requests
 
 Werkzeug
+
+gunicorn
