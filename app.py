@@ -1,19 +1,19 @@
 import os, uuid
-from flask import Flask, render_template, request, session, jsonify
+from flask import Flask, render_template, request, session, jsonify, redirect, url_for
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
-# --- データベース接続設定 ---
-# ここは必ず自分の「External Database URL」を貼り付けてください
-raw_url = "postgresql://user:QMe5ISzWDVoOpTMnKLzLb43mbRqM8hWU@://render.com"
-app.config['SQLALCHEMY_DATABASE_URI'] = raw_url + "?sslmode=require"
+# --- データベース設定 ---
+# External URLをここに貼ります
+DB_URL = "postgresql://user:QMe5ISzWDVoOpTMnKLzLb43mbRqM8hWU@://render.com"
+app.config['SQLALCHEMY_DATABASE_URI'] = DB_URL + "?sslmode=require"
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
-# --- モデル定義 ---
+# --- モデル ---
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(50), unique=True)
@@ -33,7 +33,7 @@ class Post(db.Model):
     name = db.Column(db.String(50))
     body = db.Column(db.Text)
 
-# --- ルート設定 ---
+# --- ルート ---
 @app.route('/')
 def home():
     return render_template('index.html')
@@ -41,19 +41,16 @@ def home():
 @app.route('/api/auth', methods=['POST'])
 def api_auth():
     d = request.json
-    try:
-        user = User.query.filter_by(username=d['u']).first()
-        if not user:
-            user = User(username=d['u'], password=generate_password_hash(d['p']), group_id="default")
-            db.session.add(user)
-            db.session.commit()
-        if check_password_hash(user.password, d['p']):
-            session['user_id'] = user.id
-            session['username'] = user.username
-            session['group_id'] = user.group_id
-            return jsonify({"success": True, "group_id": user.group_id})
-    except:
-        db.session.rollback()
+    user = User.query.filter_by(username=d['u']).first()
+    if not user:
+        user = User(username=d['u'], password=generate_password_hash(d['p']), group_id="default")
+        db.session.add(user)
+        db.session.commit()
+    if check_password_hash(user.password, d['p']):
+        session['user_id'] = user.id
+        session['username'] = user.username
+        session['group_id'] = user.group_id
+        return jsonify({"success": True, "group_id": user.group_id})
     return jsonify({"success": False}), 401
 
 @app.route('/api/threads')
@@ -90,4 +87,5 @@ def api_post(id):
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
-    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
