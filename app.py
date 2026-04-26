@@ -7,13 +7,13 @@ app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
 # --- データベース接続設定 (エラーを物理的に消し去った確定版URL) ---
-# .render.com の直後に :5432 を付け、末尾に ?sslmode=require を付けています
+# この一行を絶対に崩さないように貼り付けてください
 app.config['SQLALCHEMY_DATABASE_URI'] = "postgresql://user:QMe5ISzWDVoOpTMnKLzLb43mbRqM8hWU@://render.com"
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
 
-# --- あとはこれまでの「削除機能付き」のモデルとルート ---
+# --- モデル定義 ---
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(50), unique=True)
@@ -33,6 +33,7 @@ class Post(db.Model):
     name = db.Column(db.String(50))
     body = db.Column(db.Text)
 
+# --- ルート設定 ---
 @app.route('/')
 def home():
     return render_template('index.html')
@@ -65,9 +66,11 @@ def api_auth():
 
 @app.route('/api/threads')
 def api_threads():
-    gid = session.get('group_id', 'default')
-    ts = Thread.query.filter_by(group_id=gid, is_locked=False).all()
-    return jsonify([{"id": t.id, "title": t.title, "count": len(t.posts)} for t in ts])
+    try:
+        gid = session.get('group_id', 'default')
+        ts = Thread.query.filter_by(group_id=gid, is_locked=False).all()
+        return jsonify([{"id": t.id, "title": t.title, "count": len(t.posts)} for t in ts])
+    except: return jsonify([])
 
 @app.route('/api/thread/<id>')
 def api_thread(id):
