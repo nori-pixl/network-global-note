@@ -1,4 +1,4 @@
-import os, uuid, logging
+import os, uuid
 from flask import Flask, render_template, request, session, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -7,10 +7,12 @@ app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
 # --- データベース接続設定 ---
-# SSLモードを確実に適用するURL構成
+# Renderの接続URLに、安定化のためのオプションを追加
 raw_url = "postgresql://user:QMe5ISzWDVoOpTMnKLzLb43mbRqM8hWU@dpg-d7mph9a8qa3s739r7lf0-a/bbs_db_03wc"
 app.config['SQLALCHEMY_DATABASE_URI'] = raw_url + "?sslmode=require"
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+# 接続切れを防ぐ設定を追加
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {"pool_pre_ping": True}
 
 db = SQLAlchemy(app)
 
@@ -45,6 +47,7 @@ def api_auth():
     try:
         user = User.query.filter_by(username=d['u']).first()
         if not user:
+            # 初回アカウント作成
             user = User(username=d['u'], password=generate_password_hash(d['p']), group_id="default")
             db.session.add(user)
             db.session.commit()
@@ -56,35 +59,40 @@ def api_auth():
             return jsonify({"success": True, "group_id": user.group_id})
         return jsonify({"success": False, "error": "パスワードが違います"}), 401
     except Exception as e:
-        # ここでエラーの正体をHTML側に送る
+        # ここが重要：エラーの正体を文字列にして返す
         db.session.rollback()
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({"success": False, "error": f"SQL Error: {str(e)}"}), 500
 
 @app.route('/api/threads')
 def api_threads():
     try:
         ts = Thread.query.filter_by(group_id=session.get('group_id'), is_locked=False).all()
         return jsonify([{"id": t.id, "title": t.title, "count": len(t.posts)} for t in ts])
-    except:
-        return jsonify([])
+    except Exception as e:
+        return jsonify({"error": str(e)})
 
-# (以下略: 他のAPIルートは前回のままでOK)
 @app.route('/api/create_thread', methods=['POST'])
 def api_create():
-    new_id = str(uuid.uuid4())[:8]
-    t = Thread(id=new_id, group_id=session['group_id'], title=request.json['title'])
-    db.session.add(t)
-    db.session.commit()
-    return jsonify({"success": True})
+    try:
+        new_id = str(uuid.uuid4())[:8]
+        t = Thread(id=new_id, group_id=session['group_id'], title=request.json['title'])
+        db.session.add(t)
+        db.session.commit()
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
 
 @app.route('/api/post/<id>', methods=['POST'])
 def api_post(id):
-    t = Thread.query.get(id)
-    if t and not t.is_locked:
-        p = Post(thread_id=id, name=session['username'], body=request.json['body'])
-        db.session.add(p)
-        db.session.commit()
-    return jsonify({"success": True})
+    try:
+        t = Thread.query.get(id)
+        if t and not t.is_locked:
+            p = Post(thread_id=id, name=session['username'], body=request.json['body'])
+            db.session.add(p)
+            db.session.commit()
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
 
 if __name__ == '__main__':
     with app.app_context():
