@@ -7,11 +7,20 @@ app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
 # --- データベース接続設定 ---
-# Renderの接続URLに、安定化のためのオプションを追加
 raw_url = "postgresql://user:QMe5ISzWDVoOpTMnKLzLb43mbRqM8hWU@dpg-d7mph9a8qa3s739r7lf0-a/bbs_db_03wc"
-app.config['SQLALCHEMY_DATABASE_URI'] = raw_url + "?sslmode=require"
+
+# Render/PostgreSQL向けの修正
+if raw_url.startswith("postgres://"):
+    db_url = raw_url.replace("postgres://", "postgresql+psycopg2://", 1)
+else:
+    db_url = raw_url.replace("postgresql://", "postgresql+psycopg2://", 1)
+
+# SSL設定を末尾に付与
+if "?" not in db_url:
+    db_url += "?sslmode=require"
+
+app.config['SQLALCHEMY_DATABASE_URI'] = db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-# 接続切れを防ぐ設定を追加
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {"pool_pre_ping": True}
 
 db = SQLAlchemy(app)
@@ -43,11 +52,10 @@ def home():
 
 @app.route('/api/auth', methods=['POST'])
 def api_auth():
-    d = request.json
     try:
+        d = request.json
         user = User.query.filter_by(username=d['u']).first()
         if not user:
-            # 初回アカウント作成
             user = User(username=d['u'], password=generate_password_hash(d['p']), group_id="default")
             db.session.add(user)
             db.session.commit()
@@ -57,19 +65,24 @@ def api_auth():
             session['username'] = user.username
             session['group_id'] = user.group_id
             return jsonify({"success": True, "group_id": user.group_id})
-        return jsonify({"success": False, "error": "パスワードが違います"}), 401
+        return jsonify({"success": False, "error": "パスワード不一致"}), 401
     except Exception as e:
-        # ここが重要：エラーの正体を文字列にして返す
         db.session.rollback()
-        return jsonify({"success": False, "error": f"SQL Error: {str(e)}"}), 500
+        return jsonify({"success": False, "error": f"DB Error: {str(e)}"}), 500
 
 @app.route('/api/threads')
 def api_threads():
     try:
         ts = Thread.query.filter_by(group_id=session.get('group_id'), is_locked=False).all()
         return jsonify([{"id": t.id, "title": t.title, "count": len(t.posts)} for t in ts])
-    except Exception as e:
-        return jsonify({"error": str(e)})
+    except: return jsonify([])
+
+@app.route('/api/thread/<id>')
+def api_thread(id):
+    t = Thread.query.get(id)
+    if not t: return jsonify({"error": "NoThread"}), 404
+    posts = [{"name": p.name, "body": p.body} for p in t.posts]
+    return jsonify({"title": t.title, "posts": posts, "is_locked": t.is_locked})
 
 @app.route('/api/create_thread', methods=['POST'])
 def api_create():
@@ -79,8 +92,7 @@ def api_create():
         db.session.add(t)
         db.session.commit()
         return jsonify({"success": True})
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)})
+    except Exception as e: return jsonify({"success": False, "error": str(e)})
 
 @app.route('/api/post/<id>', methods=['POST'])
 def api_post(id):
@@ -89,13 +101,12 @@ def api_post(id):
         if t and not t.is_locked:
             p = Post(thread_id=id, name=session['username'], body=request.json['body'])
             db.session.add(p)
+            if len(t.posts) >= 300: t.is_locked = True
             db.session.commit()
         return jsonify({"success": True})
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)})
+    except: return jsonify({"success": False})
 
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
