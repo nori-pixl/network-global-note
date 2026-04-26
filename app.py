@@ -6,10 +6,11 @@ from werkzeug.security import generate_password_hash, check_password_hash
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
-# --- データベース接続設定 (SSL強制・ポート明示) ---
-raw_url = "postgresql://user:QMe5ISzWDVoOpTMnKLzLb43mbRqM8hWU@://render.com"
-app.config['SQLALCHEMY_DATABASE_URI'] = raw_url
+# --- データベース接続設定 (一字一句、間違いのない完全なURL) ---
+# この文字列をそのまま使います。自動加工は一切しません。
+app.config['SQLALCHEMY_DATABASE_URI'] = "postgresql://user:QMe5ISzWDVoOpTMnKLzLb43mbRqM8hWU@://render.com"
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
 db = SQLAlchemy(app)
 
 # --- モデル定義 ---
@@ -32,7 +33,7 @@ class Post(db.Model):
     name = db.Column(db.String(50))
     body = db.Column(db.Text)
 
-# --- ルート ---
+# --- ルート設定 ---
 @app.route('/')
 def home():
     return render_template('index.html')
@@ -66,12 +67,12 @@ def api_thread(id):
     t = Thread.query.get(id)
     if not t: return jsonify({"error": "None"}), 404
     posts = [{"id": p.id, "name": p.name, "body": p.body} for p in t.posts]
-    return jsonify({"title": t.title, "posts": posts, "is_locked": t.is_locked})
+    return jsonify({"title": t.title, "posts": posts, "is_locked": t.is_locked, "current_user": session.get('username')})
 
 @app.route('/api/create_thread', methods=['POST'])
 def api_create():
     new_id = str(uuid.uuid4())[:8]
-    t = Thread(id=new_id, group_id=session.get('group_id','default'), title=request.json['title'])
+    t = Thread(id=new_id, group_id=session.get('group_id', 'default'), title=request.json['title'])
     db.session.add(t)
     db.session.commit()
     return jsonify({"success": True})
@@ -79,10 +80,10 @@ def api_create():
 @app.route('/api/post/<id>', methods=['POST'])
 def api_post(id):
     t = Thread.query.get(id)
-    if t and not t.is_locked and len(t.posts) < 300:
-        p = Post(thread_id=id, name=session.get('username'), body=request.json['body'])
+    if t and not t.is_locked:
+        p = Post(thread_id=id, name=session.get('username', 'Guest'), body=request.json['body'])
         db.session.add(p)
-        if len(t.posts) + 1 >= 300: t.is_locked = True
+        if len(t.posts) >= 300: t.is_locked = True
         db.session.commit()
     return jsonify({"success": True})
 
@@ -104,5 +105,7 @@ def api_delete_post(post_id):
     return jsonify({"success": False}), 403
 
 if __name__ == '__main__':
-    with app.app_context(): db.create_all()
-    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
+    with app.app_context():
+        db.create_all()
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
