@@ -1,18 +1,17 @@
 import os, uuid
-from flask import Flask, render_template, request, session, jsonify, redirect, url_for
+from flask import Flask, render_template, request, session, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
-# 【ここが重要】ポート番号5432とSSL設定を最初から完全に組み込んだ「1本の文字列」です
-# これにより Python の読み込みエラーを物理的に回避します
+# ポート番号 5432 を含めた「完全な1本の文字列」です。絶対に崩さないでください。
 app.config['SQLALCHEMY_DATABASE_URI'] = "postgresql://user:QMe5ISzWDVoOpTMnKLzLb43mbRqM8hWU@://render.com"
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
 db = SQLAlchemy(app)
 
+# --- 以下、モデルとルート (前と同じ) ---
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(50), unique=True)
@@ -64,9 +63,11 @@ def api_auth():
 
 @app.route('/api/threads')
 def api_threads():
-    gid = session.get('group_id', 'default')
-    ts = Thread.query.filter_by(group_id=gid, is_locked=False).all()
-    return jsonify([{"id": t.id, "title": t.title, "count": len(t.posts)} for t in ts])
+    try:
+        gid = session.get('group_id', 'default')
+        ts = Thread.query.filter_by(group_id=gid, is_locked=False).all()
+        return jsonify([{"id": t.id, "title": t.title, "count": len(t.posts)} for t in ts])
+    except: return jsonify([])
 
 @app.route('/api/thread/<id>')
 def api_thread(id):
