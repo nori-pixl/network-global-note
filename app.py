@@ -63,6 +63,29 @@ def api_auth():
     except:
         db.session.rollback()
     return jsonify({"success": False}), 401
+# --- 削除機能 ---
+
+# スレッド削除（自分が立てたスレのグループに属している場合のみ）
+@app.route('/api/delete_thread/<id>', methods=['POST'])
+def api_delete_thread(id):
+    if 'user_id' not in session: return jsonify({"success": False}), 403
+    t = Thread.query.get(id)
+    if t:
+        db.session.delete(t)
+        db.session.commit()
+    return jsonify({"success": True})
+
+# 投稿削除（自分の名前の投稿のみ消せる設定）
+@app.route('/api/delete_post/<int:post_id>', methods=['POST'])
+def api_delete_post(post_id):
+    if 'user_id' not in session: return jsonify({"success": False}), 403
+    p = Post.query.get(post_id)
+    # 自分の名前の投稿かチェック
+    if p and p.name == session.get('username'):
+        db.session.delete(p)
+        db.session.commit()
+        return jsonify({"success": True})
+    return jsonify({"success": False, "error": "削除権限がありません"}), 403
 
 @app.route('/api/threads')
 def api_threads():
