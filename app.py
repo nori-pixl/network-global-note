@@ -6,15 +6,16 @@ from werkzeug.security import generate_password_hash, check_password_hash
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
-# --- データベース接続設定 (エラーを解消した確定版URL) ---
-# ドメインの直後に :5432 を追加し、SSL設定を付与しました
-raw_url = "postgresql://user:QMe5ISzWDVoOpTMnKLzLb43mbRqM8hWU@://render.com"
-app.config['SQLALCHEMY_DATABASE_URI'] = raw_url + "?sslmode=require"
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+# Renderの設定画面からURLを読み込む設定（エラーを回避）
+db_url = os.environ.get("DATABASE_URL")
+if db_url and db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgres://", "postgresql://", 1)
 
+app.config['SQLALCHEMY_DATABASE_URI'] = db_url
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
-# --- モデル定義 ---
+# --- モデル定義 (User, Thread, Post) ---
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(50), unique=True)
@@ -34,22 +35,18 @@ class Post(db.Model):
     name = db.Column(db.String(50))
     body = db.Column(db.Text)
 
-# --- ルート設定 ---
-
 @app.route('/')
 def home():
     return render_template('index.html')
 
-# 1. 最初にここを開いてテーブルを作成する
 @app.route('/init_db')
 def init_db():
     try:
         db.create_all()
-        return "<h1>成功！</h1><p>データベースの準備が整いました。<br><a href='/'>ログイン画面へ戻る</a></p>"
+        return "SUCCESS"
     except Exception as e:
-        return f"<h1>失敗</h1><p>理由: {str(e)}</p>"
+        return str(e)
 
-# 2. ログイン/登録API
 @app.route('/api/auth', methods=['POST'])
 def api_auth():
     d = request.json
@@ -59,28 +56,19 @@ def api_auth():
             user = User(username=d['u'], password=generate_password_hash(d['p']), group_id="default")
             db.session.add(user)
             db.session.commit()
-        
         if check_password_hash(user.password, d['p']):
             session['user_id'] = user.id
             session['username'] = user.username
             session['group_id'] = user.group_id
             return jsonify({"success": True, "group_id": user.group_id})
-        return jsonify({"success": False, "error": "パスワードが違います"}), 401
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"success": False, "error": str(e)}), 500
+    except: pass
+    return jsonify({"success": False}), 401
 
-# 3. スレッド一覧取得
 @app.route('/api/threads')
 def api_threads():
-    try:
-        gid = session.get('group_id', 'default')
-        ts = Thread.query.filter_by(group_id=gid, is_locked=False).all()
-        return jsonify([{"id": t.id, "title": t.title, "count": len(t.posts)} for t in ts])
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    ts = Thread.query.filter_by(group_id=session.get('group_id', 'default'), is_locked=False).all()
+    return jsonify([{"id": t.id, "title": t.title, "count": len(t.posts)} for t in ts])
 
-# 4. スレッド詳細取得
 @app.route('/api/thread/<id>')
 def api_thread(id):
     t = Thread.query.get(id)
@@ -88,30 +76,24 @@ def api_thread(id):
     posts = [{"name": p.name, "body": p.body} for p in t.posts]
     return jsonify({"title": t.title, "posts": posts, "is_locked": t.is_locked})
 
-# 5. スレ立て
 @app.route('/api/create_thread', methods=['POST'])
 def api_create():
-    if 'group_id' not in session: return jsonify({"success": False}), 403
     new_id = str(uuid.uuid4())[:8]
     t = Thread(id=new_id, group_id=session['group_id'], title=request.json['title'])
     db.session.add(t)
     db.session.commit()
     return jsonify({"success": True})
 
-# 6. 投稿 (自動更新対応)
 @app.route('/api/post/<id>', methods=['POST'])
 def api_post(id):
     t = Thread.query.get(id)
     if t and not t.is_locked and len(t.posts) < 300:
-        p = Post(thread_id=id, name=session.get('username', 'Guest'), body=request.json['body'])
+        p = Post(thread_id=id, name=session['username'], body=request.json['body'])
         db.session.add(p)
-        if len(t.posts) + 1 >= 300:
-            t.is_locked = True
+        if len(t.posts) + 1 >= 300: t.is_locked = True
         db.session.commit()
     return jsonify({"success": True})
 
 if __name__ == '__main__':
-    with app.app_context():
-        db.create_all()
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
+    with app.app_context(): db.create_all()
+    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
