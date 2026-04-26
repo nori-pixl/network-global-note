@@ -108,5 +108,11 @@ def api_post(id):
 
 if __name__ == '__main__':
     with app.app_context():
+        # ここで「引き出し（テーブル）」を強制的に作成します
         db.create_all()
-    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
+        print("--- データベースのテーブル作成が完了しました ---")
+
+    # Renderのポートで起動
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
+    
