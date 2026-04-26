@@ -1,26 +1,17 @@
-import os
-import uuid
-from flask import Flask, render_template, request, redirect, url_for, session, jsonify
+import os, uuid
+from flask import Flask, render_template, request, session, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
-
-# データベース設定
-database_url = os.environ.get("DATABASE_URL", "sqlite:///bbs_data.db")
-if database_url.startswith("postgres://"):
-    database_url = database_url.replace("postgres://", "postgresql://", 1)
-app.config['SQLALCHEMY_DATABASE_URI'] = database_url
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get("DATABASE_URL", "sqlite:///bbs.db").replace("postgres://", "postgresql://", 1)
 db = SQLAlchemy(app)
 
-# --- データベースモデル ---
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(50), unique=True, nullable=False)
-    password = db.Column(db.String(255), nullable=False)
+    username = db.Column(db.String(50), unique=True)
+    password = db.Column(db.String(255))
     group_id = db.Column(db.String(50))
 
 class Thread(db.Model):
@@ -36,82 +27,54 @@ class Post(db.Model):
     name = db.Column(db.String(50))
     body = db.Column(db.Text)
 
-# --- 画面の処理 ---
-
-# 1. ログイン/会員登録画面
 @app.route('/')
-@app.route('/login')
-def login_page():
-    return render_template('login.html')
+def home():
+    return render_template('index.html')
 
-# 2. 会員登録 & ログインAPI (JSから呼ばれる)
 @app.route('/api/auth', methods=['POST'])
 def api_auth():
-    data = request.json
-    u = data.get('username')
-    p = data.get('password')
-    g = data.get('group_id', 'default') # 未指定ならdefaultグループ
-    
-    user = User.query.filter_by(username=u).first()
-    
-    # ユーザーがいない場合は新規登録
+    d = request.json
+    user = User.query.filter_by(username=d['u']).first()
     if not user:
-        hashed_pw = generate_password_hash(p)
-        user = User(username=u, password=hashed_pw, group_id=g)
+        user = User(username=d['u'], password=generate_password_hash(d['p']), group_id="default")
         db.session.add(user)
         db.session.commit()
-    
-    # ログイン判定
-    if check_password_hash(user.password, p):
+    if check_password_hash(user.password, d['p']):
         session['user_id'] = user.id
         session['username'] = user.username
         session['group_id'] = user.group_id
         return jsonify({"success": True, "group_id": user.group_id})
-    
     return jsonify({"success": False}), 401
 
-# 3. スレッド一覧
-@app.route('/group/<group_id>')
-def group_threads(group_id):
-    if 'user_id' not in session: return redirect('/login')
-    threads = Thread.query.filter_by(group_id=group_id, is_locked=False).all()
-    return render_template('index.html', threads=threads, group_id=group_id)
+@app.route('/api/threads')
+def api_threads():
+    ts = Thread.query.filter_by(group_id=session['group_id'], is_locked=False).all()
+    return jsonify([{"id": t.id, "title": t.title, "count": len(t.posts)} for t in ts])
 
-# 4. スレッド表示
-@app.route('/view/<thread_id>')
-def view_thread(thread_id):
-    if 'user_id' not in session: return redirect('/login')
-    thread = Thread.query.get_or_404(thread_id)
-    return render_template('view.html', thread=thread)
+@app.route('/api/thread/<id>')
+def api_thread(id):
+    t = Thread.query.get(id)
+    posts = [{"name": p.name, "body": p.body} for p in t.posts]
+    return jsonify({"title": t.title, "posts": posts, "is_locked": t.is_locked})
 
-# 5. スレ立て
-@app.route('/create_thread', methods=['POST'])
-def create_thread():
-    group_id = session.get('group_id')
-    title = request.form.get('title')
-    if group_id and title:
-        new_id = str(uuid.uuid4())[:8]
-        thread = Thread(id=new_id, group_id=group_id, title=title)
-        db.session.add(thread)
+@app.route('/api/create_thread', methods=['POST'])
+def api_create():
+    new_id = str(uuid.uuid4())[:8]
+    t = Thread(id=new_id, group_id=session['group_id'], title=request.json['title'])
+    db.session.add(t)
+    db.session.commit()
+    return jsonify({"success": True})
+
+@app.route('/api/post/<id>', methods=['POST'])
+def api_post(id):
+    t = Thread.query.get(id)
+    if not t.is_locked and len(t.posts) < 300:
+        p = Post(thread_id=id, name=session['username'], body=request.json['body'])
+        db.session.add(p)
+        if len(t.posts) + 1 >= 300: t.is_locked = True
         db.session.commit()
-    return redirect(url_for('group_threads', group_id=group_id))
-
-# 6. 投稿 (300件制限)
-@app.route('/post/<thread_id>', methods=['POST'])
-def add_post(thread_id):
-    thread = Thread.query.get(thread_id)
-    if thread and not thread.is_locked:
-        if len(thread.posts) < 300:
-            p = Post(thread_id=thread_id, name=session.get('username'), body=request.form.get('body'))
-            db.session.add(p)
-            db.session.commit()
-            if len(thread.posts) >= 300:
-                thread.is_locked = True
-                db.session.commit()
-    return redirect(url_for('view_thread', thread_id=thread_id))
+    return jsonify({"success": True})
 
 if __name__ == '__main__':
-    with app.app_context():
-        db.create_all()
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
+    with app.app_context(): db.create_all()
+    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
