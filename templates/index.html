@@ -2,38 +2,147 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>◎live 一覧 - MODERN BBS</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MODERN BBS - ALL IN ONE</title>
+    <script src="https://tailwindcss.com"></script>
+    <style>
+        body { background: #0f172a; color: #f1f5f9; }
+        .glass { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.1); border-radius: 1.5rem; }
+        .hidden { display: none; }
+    </style>
 </head>
-<body class="p-20">
-    <div class="max-w-4xl mx-auto">
-        <header class="flex justify-between items-center mb-20">
-            <h1 class="gradient-text text-2xl">◎live: スレッド一覧</h1>
-            <div class="glass px-15 py-5 text-sm">Group: {{ group_id }}</div>
-        </header>
-
-        <!-- 新規スレ作成 -->
-        <div class="glass p-20 mb-20">
-            <form action="/create_thread" method="POST" class="flex gap-10">
-                <input type="text" name="title" placeholder="新しいスレッドのタイトル..." required style="flex-grow: 1;">
-                <button type="submit" class="btn-primary">スレ立て</button>
-            </form>
+<body class="p-4 md:p-8">
+    <div id="app" class="max-w-4xl mx-auto">
+        
+        <!-- 1. ログイン画面 -->
+        <div id="view-login" class="glass p-10 mt-20 max-w-md mx-auto">
+            <h1 class="text-2xl font-bold mb-6 text-center text-sky-400">入室</h1>
+            <input type="text" id="username" placeholder="アカウント名" class="w-full bg-slate-900 border border-slate-700 p-3 rounded-xl mb-4">
+            <input type="password" id="password" placeholder="パスワード" class="w-full bg-slate-900 border border-slate-700 p-3 rounded-xl mb-6">
+            <button onclick="auth()" class="w-full bg-sky-600 py-3 rounded-xl font-bold">入室する</button>
         </div>
 
-        <!-- スレリスト -->
-        <div class="grid gap-10">
-            {% for t in threads %}
-            <a href="/view/{{ t.id }}" style="text-decoration: none;">
-                <div class="glass p-20 flex justify-between items-center hover-effect">
-                    <div>
-                        <span class="live-pulse"></span>
-                        <span class="font-bold">{{ t.title }}</span>
-                    </div>
-                    <div class="post-meta font-mono">{{ t.posts|length }} / 300</div>
+        <!-- 2. スレッド一覧画面 -->
+        <div id="view-index" class="hidden">
+            <header class="flex justify-between items-center mb-8">
+                <h1 class="text-2xl font-bold text-sky-400">◎live: スレッド一覧</h1>
+                <button onclick="logout()" class="text-xs text-slate-500">ログアウト</button>
+            </header>
+            <div class="glass p-6 mb-6">
+                <div class="flex gap-4">
+                    <input type="text" id="new-thread-title" placeholder="新しいスレッド..." class="flex-grow bg-slate-900 border border-slate-700 p-2 rounded-xl">
+                    <button onclick="createThread()" class="bg-sky-600 px-6 py-2 rounded-xl font-bold">作成</button>
                 </div>
-            </a>
-            {% endfor %}
+            </div>
+            <div id="thread-list" class="grid gap-4"></div>
         </div>
+
+        <!-- 3. スレッド詳細画面 -->
+        <div id="view-thread" class="hidden">
+            <button onclick="showIndex()" class="mb-4 text-sky-500 text-sm">← 一覧に戻る</button>
+            <h2 id="thread-title" class="text-xl font-bold mb-4"></h2>
+            <div id="post-list" class="glass p-6 mb-6 min-h-[200px]"></div>
+            <div id="post-form-container">
+                <textarea id="post-body" placeholder="書き込む..." class="w-full bg-slate-900 border border-slate-700 p-4 rounded-xl mb-4"></textarea>
+                <button onclick="addPost()" class="w-full bg-sky-600 py-3 rounded-xl font-bold">送信</button>
+            </div>
+        </div>
+
     </div>
+
+    <script>
+        let currentThreadId = null;
+
+        // ページ読み込み時に自動ログイン確認
+        window.onload = () => {
+            const saved = localStorage.getItem('bbs_auth');
+            if (saved) {
+                const data = JSON.parse(atob(saved));
+                document.getElementById('username').value = data.u;
+                document.getElementById('password').value = data.p;
+                auth();
+            }
+        };
+
+        // --- 画面切り替え ---
+        function showView(viewId) {
+            ['view-login', 'view-index', 'view-thread'].forEach(id => {
+                document.getElementById(id).classList.add('hidden');
+            });
+            document.getElementById(viewId).classList.remove('hidden');
+        }
+
+        async function auth() {
+            const u = document.getElementById('username').value;
+            const p = document.getElementById('password').value;
+            const res = await fetch('/api/auth', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({u, p})
+            });
+            if (res.ok) {
+                localStorage.setItem('bbs_auth', btoa(JSON.stringify({u, p})));
+                showIndex();
+            } else {
+                alert("失敗");
+            }
+        }
+
+        async function showIndex() {
+            showView('view-index');
+            const res = await fetch('/api/threads');
+            const threads = await res.json();
+            const list = document.getElementById('thread-list');
+            list.innerHTML = threads.map(t => `
+                <div onclick="showThread('${t.id}')" class="glass p-5 flex justify-between cursor-pointer hover:bg-slate-800 transition">
+                    <span>◎live: ${t.title}</span>
+                    <span class="text-sky-500 font-bold">${t.count}/300</span>
+                </div>
+            `).join('');
+        }
+
+        async function showThread(id) {
+            currentThreadId = id;
+            showView('view-thread');
+            const res = await fetch(`/api/thread/${id}`);
+            const data = await res.json();
+            document.getElementById('thread-title').innerText = data.title;
+            document.getElementById('post-list').innerHTML = data.posts.map((p, i) => `
+                <div class="border-b border-slate-800 py-4">
+                    <div class="text-xs text-slate-500">${i+1}: ${p.name}</div>
+                    <div>${p.body}</div>
+                </div>
+            `).join('');
+            
+            // 300件制限でフォームを消す
+            document.getElementById('post-form-container').style.display = data.is_locked ? 'none' : 'block';
+        }
+
+        async function createThread() {
+            const title = document.getElementById('new-thread-title').value;
+            await fetch('/api/create_thread', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({title})
+            });
+            showIndex();
+        }
+
+        async function addPost() {
+            const body = document.getElementById('post-body').value;
+            await fetch(`/api/post/${currentThreadId}`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({body})
+            });
+            document.getElementById('post-body').value = '';
+            showThread(currentThreadId);
+        }
+
+        function logout() {
+            localStorage.removeItem('bbs_auth');
+            location.reload();
+        }
+    </script>
 </body>
 </html>
