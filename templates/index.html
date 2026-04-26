@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BBS</title>
+    <title>MODERN BBS</title>
     <script src="https://tailwindcss.com"></script>
     <style>
         body { background: #0f172a; color: #f1f5f9; }
@@ -11,88 +11,97 @@
         .hidden { display: none; }
     </style>
 </head>
-<body class="p-4 md:p-8">
+<body class="p-4">
     <div id="app" class="max-w-4xl mx-auto">
-        
+        <!-- ログイン -->
         <div id="view-login" class="glass p-10 mt-20 max-w-md mx-auto">
             <h1 class="text-2xl font-bold mb-6 text-center text-sky-400">入室</h1>
-            <input type="text" id="username" placeholder="名前" class="w-full bg-slate-900 border border-slate-700 p-3 rounded-xl mb-4 text-white">
-            <input type="password" id="password" placeholder="パス" class="w-full bg-slate-900 border border-slate-700 p-3 rounded-xl mb-6 text-white">
+            <input type="text" id="username" placeholder="名前" class="w-full bg-slate-900 border-slate-700 p-3 rounded-xl mb-4 text-white">
+            <input type="password" id="password" placeholder="パス" class="w-full bg-slate-900 border-slate-700 p-3 rounded-xl mb-6 text-white">
             <button onclick="auth()" class="w-full bg-sky-600 py-3 rounded-xl font-bold">入室する</button>
         </div>
 
+        <!-- スレ一覧 -->
         <div id="view-index" class="hidden">
             <header class="flex justify-between items-center mb-8">
                 <h1 class="text-2xl font-bold text-sky-400">◎live: スレッド</h1>
-                <button onclick="location.reload()" class="text-xs text-slate-500 underline">更新</button>
+                <button onclick="logout()" class="text-xs text-slate-500 underline">ログアウト</button>
             </header>
             <div class="glass p-6 mb-6">
                 <div class="flex gap-4">
-                    <input type="text" id="new-thread-title" placeholder="タイトル..." class="flex-grow bg-slate-900 border border-slate-700 p-2 rounded-xl text-white">
+                    <input type="text" id="new-thread-title" placeholder="スレタイ..." class="flex-grow bg-slate-900 border-slate-700 p-2 rounded-xl text-white">
                     <button onclick="createThread()" class="bg-sky-600 px-6 py-2 rounded-xl font-bold">作成</button>
                 </div>
             </div>
             <div id="thread-list" class="grid gap-4"></div>
         </div>
 
+        <!-- スレの中身 -->
         <div id="view-thread" class="hidden">
             <button onclick="showIndex()" class="mb-4 text-sky-500 text-sm">← 戻る</button>
             <h2 id="thread-title" class="text-xl font-bold mb-4"></h2>
-            <div id="post-list" class="glass p-6 mb-6 min-h-[200px]"></div>
+            <div id="post-list" class="glass p-6 mb-6 min-h-[300px]"></div>
             <div id="post-form-container">
-                <textarea id="post-body" placeholder="メッセージ..." class="w-full bg-slate-900 border border-slate-700 p-4 rounded-xl mb-4 text-white"></textarea>
+                <textarea id="post-body" placeholder="メッセージ..." class="w-full bg-slate-900 border-slate-700 p-4 rounded-xl mb-4 text-white"></textarea>
                 <button onclick="addPost()" class="w-full bg-sky-600 py-3 rounded-xl font-bold">送信</button>
             </div>
         </div>
-
     </div>
 
     <script>
         let currentThreadId = null;
+        let autoRefresh = null;
+
+        function showView(viewId) {
+            ['view-login', 'view-index', 'view-thread'].forEach(id => {
+                document.getElementById(id).classList.add('hidden');
+            });
+            document.getElementById(viewId).classList.remove('hidden');
+        }
 
         async function auth() {
             const u = document.getElementById('username').value;
             const p = document.getElementById('password').value;
-            if(!u || !p) { alert("入力してください"); return; }
-            try {
-                const res = await fetch('/api/auth', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({u, p})
-                });
-                const data = await res.json();
-                if (res.ok) {
-                    localStorage.setItem('bbs_auth', btoa(JSON.stringify({u, p})));
-                    showIndex();
-                } else {
-                    alert("失敗：" + (data.error || "不明なエラー"));
-                }
-            } catch (e) {
-                alert("通信失敗：" + e.message);
-            }
+            const res = await fetch('/api/auth', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({u, p})
+            });
+            if (res.ok) {
+                localStorage.setItem('bbs_auth', btoa(JSON.stringify({u, p})));
+                showIndex();
+            } else { alert("失敗"); }
         }
 
         async function showIndex() {
+            if(autoRefresh) clearInterval(autoRefresh);
+            currentThreadId = null;
             showView('view-index');
             const res = await fetch('/api/threads');
             const threads = await res.json();
-            const list = document.getElementById('thread-list');
-            list.innerHTML = threads.map(t => `
+            document.getElementById('thread-list').innerHTML = threads.map(t => `
                 <div onclick="showThread('${t.id}')" class="glass p-5 flex justify-between cursor-pointer hover:bg-slate-800 transition">
                     <span>◎live: ${t.title}</span>
                     <span class="text-sky-500 font-bold">${t.count}/300</span>
                 </div>
-            `).join('') || '<p class="text-center text-slate-500 italic">まだスレがありません</p>';
+            `).join('') || '<p class="text-center">まだスレがありません</p>';
         }
 
         async function showThread(id) {
             currentThreadId = id;
             showView('view-thread');
-            const res = await fetch(`/api/thread/${id}`);
+            await loadPosts();
+            if(autoRefresh) clearInterval(autoRefresh);
+            autoRefresh = setInterval(loadPosts, 3000); // 3秒ごとに更新
+        }
+
+        async function loadPosts() {
+            if(!currentThreadId) return;
+            const res = await fetch(`/api/thread/${currentThreadId}`);
             const data = await res.json();
             document.getElementById('thread-title').innerText = data.title;
             document.getElementById('post-list').innerHTML = data.posts.map((p, i) => `
-                <div class="border-b border-slate-800 py-4">
+                <div class="border-b border-slate-800 py-4 animate-pulse-once">
                     <div class="text-xs text-slate-500">${i+1}: ${p.name}</div>
                     <div class="mt-1">${p.body}</div>
                 </div>
@@ -121,14 +130,12 @@
                 body: JSON.stringify({body})
             });
             document.getElementById('post-body').value = '';
-            showThread(currentThreadId);
+            loadPosts();
         }
 
-        function showView(viewId) {
-            ['view-login', 'view-index', 'view-thread'].forEach(id => {
-                document.getElementById(id).classList.add('hidden');
-            });
-            document.getElementById(viewId).classList.remove('hidden');
+        function logout() {
+            localStorage.removeItem('bbs_auth');
+            location.reload();
         }
 
         window.onload = () => {
