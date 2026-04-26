@@ -6,13 +6,13 @@ from werkzeug.security import generate_password_hash, check_password_hash
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
-# --- データベース接続設定 (エラーを物理的に封印した確定URL) ---
-# この文字列を「そのまま」使います。加工処理は一切入れません。
+# --- データベース接続設定 (確定URL) ---
+# この一行の文字列をそのまま使います。
 app.config['SQLALCHEMY_DATABASE_URI'] = "postgresql://user:QMe5ISzWDVoOpTMnKLzLb43mbRqM8hWU@://render.com"
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
-# --- データベースの箱（モデル） ---
+# モデル
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(50), unique=True)
@@ -32,19 +32,18 @@ class Post(db.Model):
     name = db.Column(db.String(50))
     body = db.Column(db.Text)
 
-# --- 画面の動き（ルート設定） ---
+# ルート
 @app.route('/')
 def home():
     return render_template('index.html')
 
-# 最初にここを開くと全ての準備が整います
 @app.route('/init_db')
 def init_db():
     try:
         db.create_all()
-        return "<h1>SUCCESS</h1><p>DB準備完了。ログイン画面へ戻ってください。</p>"
+        return "SUCCESS"
     except Exception as e:
-        return f"<h1>ERROR</h1><p>{str(e)}</p>"
+        return str(e)
 
 @app.route('/api/auth', methods=['POST'])
 def api_auth():
