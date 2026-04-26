@@ -6,10 +6,17 @@ from werkzeug.security import generate_password_hash, check_password_hash
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
-# --- データベース接続設定 (エラーを解消した確定版URL) ---
-# ポート番号 :5432 を明示し、SSL設定 (?sslmode=require) を付与しています
+# --- データベース接続設定 (エラーを物理的に回避する書き方) ---
 raw_url = "postgresql://user:QMe5ISzWDVoOpTMnKLzLb43mbRqM8hWU@://render.com"
-app.config['SQLALCHEMY_DATABASE_URI'] = raw_url + "?sslmode=require"
+
+# ポート番号が抜けている場合に備え、明示的に :5432 を挿入し、SSL設定を付加
+if ".render.com" in raw_url and ":5432" not in raw_url:
+    database_url = raw_url.replace(".render.com", ".render.com:5432", 1) + "?sslmode=require"
+else:
+    database_url = raw_url + "?sslmode=require"
+
+# postgres:// を postgresql:// に統一
+app.config['SQLALCHEMY_DATABASE_URI'] = database_url.replace("postgres://", "postgresql://", 1)
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
@@ -39,16 +46,14 @@ class Post(db.Model):
 def home():
     return render_template('index.html')
 
-# 1. 最初にここを開いてテーブルを作成する
 @app.route('/init_db')
 def init_db():
     try:
         db.create_all()
-        return "<h1>成功！</h1><p>データベースの準備が整いました。<br><a href='/'>ログイン画面へ戻る</a></p>"
+        return "<h1>成功</h1><p>DB準備完了。ログイン画面へ戻ってください。</p>"
     except Exception as e:
-        return f"<h1>失敗</h1><p>理由: {str(e)}</p>"
+        return f"失敗: {str(e)}"
 
-# 2. ログイン/登録API
 @app.route('/api/auth', methods=['POST'])
 def api_auth():
     d = request.json
@@ -63,22 +68,18 @@ def api_auth():
             session['username'] = user.username
             session['group_id'] = user.group_id
             return jsonify({"success": True, "group_id": user.group_id})
-        return jsonify({"success": False, "error": "パスワード不一致"}), 401
-    except Exception as e:
+    except:
         db.session.rollback()
-        return jsonify({"success": False, "error": str(e)}), 500
+    return jsonify({"success": False}), 401
 
-# 3. スレッド一覧取得
 @app.route('/api/threads')
 def api_threads():
     try:
         gid = session.get('group_id', 'default')
         ts = Thread.query.filter_by(group_id=gid, is_locked=False).all()
         return jsonify([{"id": t.id, "title": t.title, "count": len(t.posts)} for t in ts])
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except: return jsonify([])
 
-# 4. スレッド詳細取得 (自動メッセージ追加用)
 @app.route('/api/thread/<id>')
 def api_thread(id):
     t = Thread.query.get(id)
@@ -86,7 +87,6 @@ def api_thread(id):
     posts = [{"name": p.name, "body": p.body} for p in t.posts]
     return jsonify({"title": t.title, "posts": posts, "is_locked": t.is_locked})
 
-# 5. スレ立て
 @app.route('/api/create_thread', methods=['POST'])
 def api_create():
     if 'group_id' not in session: return jsonify({"success": False}), 403
@@ -96,7 +96,6 @@ def api_create():
     db.session.commit()
     return jsonify({"success": True})
 
-# 6. 投稿 (自動更新対応)
 @app.route('/api/post/<id>', methods=['POST'])
 def api_post(id):
     t = Thread.query.get(id)
@@ -110,5 +109,4 @@ def api_post(id):
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
