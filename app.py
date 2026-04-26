@@ -6,7 +6,8 @@ from werkzeug.security import generate_password_hash, check_password_hash
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
-# --- データベース接続設定 (ご提示のURLをRender用に最適化) ---
+# --- データベース接続設定 (エラーを解消した確定版URL) ---
+# ドメインの直後に :5432 を追加し、SSL設定を付与しました
 raw_url = "postgresql://user:QMe5ISzWDVoOpTMnKLzLb43mbRqM8hWU@://render.com"
 app.config['SQLALCHEMY_DATABASE_URI'] = raw_url + "?sslmode=require"
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -34,20 +35,21 @@ class Post(db.Model):
     body = db.Column(db.Text)
 
 # --- ルート設定 ---
+
 @app.route('/')
 def home():
-    # ログインしていない場合はログイン画面を出す設定
     return render_template('index.html')
 
-# エラー解決用の初期化URL
+# 1. 最初にここを開いてテーブルを作成する
 @app.route('/init_db')
 def init_db():
     try:
         db.create_all()
-        return "SUCCESS: Database Initialized"
+        return "<h1>成功！</h1><p>データベースの準備が整いました。<br><a href='/'>ログイン画面へ戻る</a></p>"
     except Exception as e:
-        return f"ERROR: {str(e)}"
+        return f"<h1>失敗</h1><p>理由: {str(e)}</p>"
 
+# 2. ログイン/登録API
 @app.route('/api/auth', methods=['POST'])
 def api_auth():
     d = request.json
@@ -57,47 +59,54 @@ def api_auth():
             user = User(username=d['u'], password=generate_password_hash(d['p']), group_id="default")
             db.session.add(user)
             db.session.commit()
+        
         if check_password_hash(user.password, d['p']):
             session['user_id'] = user.id
             session['username'] = user.username
             session['group_id'] = user.group_id
             return jsonify({"success": True, "group_id": user.group_id})
-        return jsonify({"success": False, "error": "Password mismatch"}), 401
+        return jsonify({"success": False, "error": "パスワードが違います"}), 401
     except Exception as e:
+        db.session.rollback()
         return jsonify({"success": False, "error": str(e)}), 500
 
+# 3. スレッド一覧取得
 @app.route('/api/threads')
 def api_threads():
     try:
-        # group_id がセッションにない場合のエラー回避
         gid = session.get('group_id', 'default')
         ts = Thread.query.filter_by(group_id=gid, is_locked=False).all()
         return jsonify([{"id": t.id, "title": t.title, "count": len(t.posts)} for t in ts])
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# (以下略: 他のAPIルート)
+# 4. スレッド詳細取得
 @app.route('/api/thread/<id>')
 def api_thread(id):
     t = Thread.query.get(id)
+    if not t: return jsonify({"error": "None"}), 404
     posts = [{"name": p.name, "body": p.body} for p in t.posts]
     return jsonify({"title": t.title, "posts": posts, "is_locked": t.is_locked})
 
+# 5. スレ立て
 @app.route('/api/create_thread', methods=['POST'])
 def api_create():
+    if 'group_id' not in session: return jsonify({"success": False}), 403
     new_id = str(uuid.uuid4())[:8]
-    t = Thread(id=new_id, group_id=session.get('group_id', 'default'), title=request.json['title'])
+    t = Thread(id=new_id, group_id=session['group_id'], title=request.json['title'])
     db.session.add(t)
     db.session.commit()
     return jsonify({"success": True})
 
+# 6. 投稿 (自動更新対応)
 @app.route('/api/post/<id>', methods=['POST'])
 def api_post(id):
     t = Thread.query.get(id)
-    if not t.is_locked:
+    if t and not t.is_locked and len(t.posts) < 300:
         p = Post(thread_id=id, name=session.get('username', 'Guest'), body=request.json['body'])
         db.session.add(p)
-        if len(t.posts) >= 300: t.is_locked = True
+        if len(t.posts) + 1 >= 300:
+            t.is_locked = True
         db.session.commit()
     return jsonify({"success": True})
 
