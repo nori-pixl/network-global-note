@@ -51,6 +51,34 @@
     </div>
 
     <script>
+        async function auth() {
+    const u = document.getElementById('username').value;
+    const p = document.getElementById('password').value;
+    
+    try {
+        const res = await fetch('/api/auth', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({u, p})
+        });
+        
+        const result = await res.json();
+
+        if (res.ok) {
+            // 成功：ログイン情報を保存して一覧へ
+            localStorage.setItem('bbs_auth', btoa(JSON.stringify({u, p})));
+            showIndex();
+        } else {
+            // 失敗：サーバーから返ってきた具体的なエラー内容を表示
+            // result.error に app.py から送られた詳細が入っています
+            alert("入室に失敗しました。\n理由: " + (result.error || "不明なエラー"));
+        }
+    } catch (e) {
+        // 通信自体ができなかった場合（サーバーが止まっている等）
+        alert("サーバーと通信できませんでした。\n詳細: " + e.message);
+    }
+}
+
         let currentThreadId = null;
 
         // ページ読み込み時に自動ログイン確認
