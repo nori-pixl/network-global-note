@@ -6,17 +6,9 @@ from werkzeug.security import generate_password_hash, check_password_hash
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
-# --- データベース接続設定 (エラーを物理的に回避する書き方) ---
-raw_url = "postgresql://user:QMe5ISzWDVoOpTMnKLzLb43mbRqM8hWU@://render.com"
-
-# ポート番号が抜けている場合に備え、明示的に :5432 を挿入し、SSL設定を付加
-if ".render.com" in raw_url and ":5432" not in raw_url:
-    database_url = raw_url.replace(".render.com", ".render.com:5432", 1) + "?sslmode=require"
-else:
-    database_url = raw_url + "?sslmode=require"
-
-# postgres:// を postgresql:// に統一
-app.config['SQLALCHEMY_DATABASE_URI'] = database_url.replace("postgres://", "postgresql://", 1)
+# --- データベース接続設定 (完全に固定された正解のURL) ---
+# 加工せず、ポート番号 5432 と SSL設定を最初から組み込んでいます
+app.config['SQLALCHEMY_DATABASE_URI'] = "postgresql://user:QMe5ISzWDVoOpTMnKLzLb43mbRqM8hWU@://render.com"
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
@@ -41,7 +33,7 @@ class Post(db.Model):
     name = db.Column(db.String(50))
     body = db.Column(db.Text)
 
-# --- ルート設定 ---
+# --- 基本ルート ---
 @app.route('/')
 def home():
     return render_template('index.html')
@@ -109,4 +101,5 @@ def api_post(id):
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
-    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
