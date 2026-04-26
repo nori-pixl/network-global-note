@@ -6,11 +6,10 @@ from werkzeug.security import generate_password_hash, check_password_hash
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
-# 1. データベース設定（一字一句、間違いのない完全なURLを直接指定）
-# 末尾の ?sslmode=require まで含めて1行の文字列にしています
-app.config['SQLALCHEMY_DATABASE_URI'] = "postgresql://user:QMe5ISzWDVoOpTMnKLzLb43mbRqM8hWU@://render.com"
+# 1. データベース接続設定 (SSL強制・ポート明示)
+raw_url = "postgresql://user:QMe5ISzWDVoOpTMnKLzLb43mbRqM8hWU@://render.com"
+app.config['SQLALCHEMY_DATABASE_URI'] = raw_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
 db = SQLAlchemy(app)
 
 # 2. モデル定義
@@ -33,7 +32,7 @@ class Post(db.Model):
     name = db.Column(db.String(50))
     body = db.Column(db.Text)
 
-# 3. ルート設定
+# 3. 基本ルート
 @app.route('/')
 def home():
     return render_template('index.html')
@@ -46,6 +45,7 @@ def init_db():
     except Exception as e:
         return str(e)
 
+# 4. ログイン・認証API
 @app.route('/api/auth', methods=['POST'])
 def api_auth():
     d = request.json
@@ -64,6 +64,7 @@ def api_auth():
         db.session.rollback()
     return jsonify({"success": False}), 401
 
+# 5. スレッド・投稿API
 @app.route('/api/threads')
 def api_threads():
     try:
@@ -97,6 +98,7 @@ def api_post(id):
         db.session.commit()
     return jsonify({"success": True})
 
+# 6. 削除API
 @app.route('/api/delete_thread/<id>', methods=['POST'])
 def api_delete_thread(id):
     t = Thread.query.get(id)
