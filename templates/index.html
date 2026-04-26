@@ -89,14 +89,19 @@
             showView('view-index');
             const res = await fetch('/api/threads');
             const threads = await res.json();
-            const list = document.getElementById('thread-list');
-            list.innerHTML = threads.map(t => `
-                <div onclick="showThread('${t.id}')" class="glass p-5 flex justify-between cursor-pointer hover:bg-slate-800 transition">
-                    <span>◎live: ${t.title}</span>
-                    <span class="text-sky-500 font-bold">${t.count}/300</span>
-                </div>
-            `).join('') || '<p class="text-center text-slate-500">まだスレがありません</p>';
-        }
+            const list = document.getElementById('thread-list');// スレ一覧のHTML生成部分を以下のように修正
+            // スレ一覧のHTML生成部分を以下のように修正
+list.innerHTML = threads.map(t => `
+    <div class="glass p-5 flex justify-between items-center hover:bg-slate-800 transition">
+        <div onclick="showThread('${t.id}')" class="flex-grow cursor-pointer">
+            <span>◎live: ${t.title}</span>
+            <span class="text-sky-500 font-bold ml-2">${t.count}/300</span>
+        </div>
+        <button onclick="deleteThread('${t.id}')" class="text-red-500 text-xs ml-4">削除</button>
+    </div>
+`).join('') || '<p class="text-center">まだスレがありません</p>';
+
+                    }
 
         // スレ詳細（自動更新開始）
         async function showThread(id) {
