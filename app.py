@@ -5,10 +5,9 @@ from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
-# Renderでのセッション維持に必要
-app.secret_key = os.environ.get("SECRET_KEY", "your-secret-key-12345")
+app.secret_key = os.urandom(24)
 
-# データベース設定（Renderの環境変数があればそれを使用、なければローカルのSQLite）
+# データベース設定
 database_url = os.environ.get("DATABASE_URL", "sqlite:///bbs_data.db")
 if database_url.startswith("postgres://"):
     database_url = database_url.replace("postgres://", "postgresql://", 1)
@@ -37,46 +36,55 @@ class Post(db.Model):
     name = db.Column(db.String(50))
     body = db.Column(db.Text)
 
-# --- ルート設定 ---
+# --- 画面の処理 ---
 
-# 1. トップページ（ログインへ転送）
+# 1. ログイン/会員登録画面
 @app.route('/')
-def index():
-    return redirect(url_for('login_page'))
-
-# 2. ログイン画面
 @app.route('/login')
 def login_page():
     return render_template('login.html')
 
-# 3. ログイン実行API（JSからの自動ログイン用）
-@app.route('/api/login', methods=['POST'])
-def api_login():
+# 2. 会員登録 & ログインAPI (JSから呼ばれる)
+@app.route('/api/auth', methods=['POST'])
+def api_auth():
     data = request.json
-    username = data.get('username')
-    password = data.get('password')
+    u = data.get('username')
+    p = data.get('password')
+    g = data.get('group_id', 'default') # 未指定ならdefaultグループ
     
-    user = User.query.filter_by(username=username).first()
-    if user and check_password_hash(user.password, password):
+    user = User.query.filter_by(username=u).first()
+    
+    # ユーザーがいない場合は新規登録
+    if not user:
+        hashed_pw = generate_password_hash(p)
+        user = User(username=u, password=hashed_pw, group_id=g)
+        db.session.add(user)
+        db.session.commit()
+    
+    # ログイン判定
+    if check_password_hash(user.password, p):
         session['user_id'] = user.id
         session['username'] = user.username
         session['group_id'] = user.group_id
         return jsonify({"success": True, "group_id": user.group_id})
+    
     return jsonify({"success": False}), 401
 
-# 4. グループ別スレッド一覧
+# 3. スレッド一覧
 @app.route('/group/<group_id>')
 def group_threads(group_id):
+    if 'user_id' not in session: return redirect('/login')
     threads = Thread.query.filter_by(group_id=group_id, is_locked=False).all()
     return render_template('index.html', threads=threads, group_id=group_id)
 
-# 5. スレッド表示
+# 4. スレッド表示
 @app.route('/view/<thread_id>')
 def view_thread(thread_id):
+    if 'user_id' not in session: return redirect('/login')
     thread = Thread.query.get_or_404(thread_id)
     return render_template('view.html', thread=thread)
 
-# 6. スレ立て
+# 5. スレ立て
 @app.route('/create_thread', methods=['POST'])
 def create_thread():
     group_id = session.get('group_id')
@@ -88,29 +96,22 @@ def create_thread():
         db.session.commit()
     return redirect(url_for('group_threads', group_id=group_id))
 
-# 7. 投稿（300件制限）
+# 6. 投稿 (300件制限)
 @app.route('/post/<thread_id>', methods=['POST'])
 def add_post(thread_id):
     thread = Thread.query.get(thread_id)
     if thread and not thread.is_locked:
         if len(thread.posts) < 300:
-            name = session.get('username', '名無しさん')
-            body = request.form.get('body')
-            p = Post(thread_id=thread_id, name=name, body=body)
+            p = Post(thread_id=thread_id, name=session.get('username'), body=request.form.get('body'))
             db.session.add(p)
             db.session.commit()
-            
-            # 投稿後に300件チェック
             if len(thread.posts) >= 300:
                 thread.is_locked = True
                 db.session.commit()
     return redirect(url_for('view_thread', thread_id=thread_id))
 
-# サーバー起動設定
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
-    
-    # Render環境のポートに対応
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
