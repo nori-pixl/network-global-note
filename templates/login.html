@@ -2,29 +2,36 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>ログイン - MODERN BBS</title>
+    <title>入室 - MODERN BBS</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <script src="{{ url_for('static', filename='js/auth.js') }}"></script>
 </head>
-<body class="flex items-center justify-center min-h-screen">
-    <div class="glass p-10 w-full max-w-md">
-        <h1 class="text-center gradient-text font-bold text-2xl mb-6">LOGIN / SIGNUP</h1>
-        
-        <form id="loginForm" class="flex flex-direction-column gap-15">
-            <div class="flex flex-direction-column">
-                <label class="post-meta">アカウント名</label>
-                <input type="text" id="username" name="username" required>
-            </div>
-            <div class="flex flex-direction-column">
-                <label class="post-meta">パスワード</label>
-                <input type="password" id="password" name="password" required>
-            </div>
-            <div class="flex items-center gap-10">
-                <input type="checkbox" id="remember_me" checked>
-                <label class="post-meta">次回から自動ログイン</label>
-            </div>
-            <button type="submit" class="btn-primary" onclick="handleLoginForm(event)">入室する</button>
+<body>
+    <div class="glass" style="max-width: 400px; margin: 100px auto; padding: 40px;">
+        <h1 class="gradient-text">MODERN BBS</h1>
+        <form action="/auth" method="POST" id="loginForm">
+            <p>アカウント名<br><input type="text" name="username" id="u" required></p>
+            <p>パスワード<br><input type="password" name="password" id="p" required></p>
+            <button type="submit" class="btn-primary" style="width: 100%;">入室する</button>
         </form>
     </div>
+
+    <script>
+        const form = document.getElementById('loginForm');
+        // 保存されたデータがあれば自動入力
+        window.onload = () => {
+            const saved = localStorage.getItem('bbs_auth');
+            if (saved) {
+                const data = JSON.parse(atob(saved));
+                document.getElementById('u').value = data.u;
+                document.getElementById('p').value = data.p;
+                // 自動でログインしたい場合は form.submit() を追加
+            }
+        };
+        // 送信時にストレージへ保存
+        form.onsubmit = () => {
+            const data = { u: document.getElementById('u').value, p: document.getElementById('p').value };
+            localStorage.setItem('bbs_auth', btoa(JSON.stringify(data)));
+        };
+    </script>
 </body>
 </html>
