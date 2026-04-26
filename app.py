@@ -6,11 +6,9 @@ from werkzeug.security import generate_password_hash, check_password_hash
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
-# --- データベース接続設定 (エラーを物理的に消し去った確定版URL) ---
-# この一行を絶対に崩さないように貼り付けてください
+# データベース接続設定 (確定版URL)
 app.config['SQLALCHEMY_DATABASE_URI'] = "postgresql://user:QMe5ISzWDVoOpTMnKLzLb43mbRqM8hWU@://render.com"
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
 db = SQLAlchemy(app)
 
 # --- モデル定義 ---
@@ -70,7 +68,8 @@ def api_threads():
         gid = session.get('group_id', 'default')
         ts = Thread.query.filter_by(group_id=gid, is_locked=False).all()
         return jsonify([{"id": t.id, "title": t.title, "count": len(t.posts)} for t in ts])
-    except: return jsonify([])
+    except:
+        return jsonify([])
 
 @app.route('/api/thread/<id>')
 def api_thread(id):
