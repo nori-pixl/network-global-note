@@ -1,28 +1,16 @@
 import os, uuid
-from flask import Flask, render_template, request, session, jsonify
+from flask import Flask, render_template, request, session, jsonify, redirect, url_for
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
-# --- データベース接続設定 ---
+# --- データベース接続設定 (ご提示のURL) ---
 raw_url = "postgresql://user:QMe5ISzWDVoOpTMnKLzLb43mbRqM8hWU@dpg-d7mph9a8qa3s739r7lf0-a/bbs_db_03wc"
-
-# Render/PostgreSQL向けの修正
-if raw_url.startswith("postgres://"):
-    db_url = raw_url.replace("postgres://", "postgresql+psycopg2://", 1)
-else:
-    db_url = raw_url.replace("postgresql://", "postgresql+psycopg2://", 1)
-
-# SSL設定を末尾に付与
-if "?" not in db_url:
-    db_url += "?sslmode=require"
-
-app.config['SQLALCHEMY_DATABASE_URI'] = db_url
+# Render用にSSL設定を強制
+app.config['SQLALCHEMY_DATABASE_URI'] = raw_url + "?sslmode=require"
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {"pool_pre_ping": True}
-
 db = SQLAlchemy(app)
 
 # --- モデル定義 ---
@@ -45,21 +33,31 @@ class Post(db.Model):
     name = db.Column(db.String(50))
     body = db.Column(db.Text)
 
-# --- APIルート ---
+# --- 画面・APIルート ---
+
+# 1. トップページ
 @app.route('/')
 def home():
     return render_template('index.html')
 
+# ★重要★ エラー解決用：ここをブラウザで開くとデータベースが完成します
+@app.route('/init_db')
+def init_db():
+    try:
+        db.create_all()
+        return "<h1>成功！</h1><p>データベースの準備が整いました。<br><a href='/'>掲示板に戻って入室してください。</a></p>"
+    except Exception as e:
+        return f"<h1>失敗</h1><p>{str(e)}</p>"
+
 @app.route('/api/auth', methods=['POST'])
 def api_auth():
+    d = request.json
     try:
-        d = request.json
         user = User.query.filter_by(username=d['u']).first()
         if not user:
             user = User(username=d['u'], password=generate_password_hash(d['p']), group_id="default")
             db.session.add(user)
             db.session.commit()
-        
         if check_password_hash(user.password, d['p']):
             session['user_id'] = user.id
             session['username'] = user.username
@@ -68,14 +66,12 @@ def api_auth():
         return jsonify({"success": False, "error": "パスワード不一致"}), 401
     except Exception as e:
         db.session.rollback()
-        return jsonify({"success": False, "error": f"DB Error: {str(e)}"}), 500
+        return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/threads')
 def api_threads():
-    try:
-        ts = Thread.query.filter_by(group_id=session.get('group_id'), is_locked=False).all()
-        return jsonify([{"id": t.id, "title": t.title, "count": len(t.posts)} for t in ts])
-    except: return jsonify([])
+    ts = Thread.query.filter_by(group_id=session.get('group_id', 'default'), is_locked=False).all()
+    return jsonify([{"id": t.id, "title": t.title, "count": len(t.posts)} for t in ts])
 
 @app.route('/api/thread/<id>')
 def api_thread(id):
@@ -86,33 +82,25 @@ def api_thread(id):
 
 @app.route('/api/create_thread', methods=['POST'])
 def api_create():
-    try:
-        new_id = str(uuid.uuid4())[:8]
-        t = Thread(id=new_id, group_id=session['group_id'], title=request.json['title'])
-        db.session.add(t)
-        db.session.commit()
-        return jsonify({"success": True})
-    except Exception as e: return jsonify({"success": False, "error": str(e)})
+    new_id = str(uuid.uuid4())[:8]
+    t = Thread(id=new_id, group_id=session['group_id'], title=request.json['title'])
+    db.session.add(t)
+    db.session.commit()
+    return jsonify({"success": True})
 
 @app.route('/api/post/<id>', methods=['POST'])
 def api_post(id):
-    try:
-        t = Thread.query.get(id)
-        if t and not t.is_locked:
-            p = Post(thread_id=id, name=session['username'], body=request.json['body'])
-            db.session.add(p)
-            if len(t.posts) >= 300: t.is_locked = True
-            db.session.commit()
-        return jsonify({"success": True})
-    except: return jsonify({"success": False})
+    t = Thread.query.get(id)
+    if not t.is_locked and len(t.posts) < 300:
+        p = Post(thread_id=id, name=session['username'], body=request.json['body'])
+        db.session.add(p)
+        if len(t.posts) + 1 >= 300: t.is_locked = True
+        db.session.commit()
+    return jsonify({"success": True})
 
 if __name__ == '__main__':
+    # 起動時にも一応実行
     with app.app_context():
-        # ここで「引き出し（テーブル）」を強制的に作成します
         db.create_all()
-        print("--- データベースのテーブル作成が完了しました ---")
-
-    # Renderのポートで起動
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
-    
