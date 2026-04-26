@@ -6,14 +6,13 @@ from werkzeug.security import generate_password_hash, check_password_hash
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
-# --- データベース接続設定 (一字一句、間違いのない完全なURL) ---
-# この文字列をそのまま使います。自動加工は一切しません。
-app.config['SQLALCHEMY_DATABASE_URI'] = "postgresql://user:QMe5ISzWDVoOpTMnKLzLb43mbRqM8hWU@://render.com"
+# データベースURL (確定版)
+DB_URL = "postgresql://user:QMe5ISzWDVoOpTMnKLzLb43mbRqM8hWU@://render.com"
+app.config['SQLALCHEMY_DATABASE_URI'] = DB_URL
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
 db = SQLAlchemy(app)
 
-# --- モデル定義 ---
+# モデル
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(50), unique=True)
@@ -33,7 +32,7 @@ class Post(db.Model):
     name = db.Column(db.String(50))
     body = db.Column(db.Text)
 
-# --- ルート設定 ---
+# ルート
 @app.route('/')
 def home():
     return render_template('index.html')
@@ -58,8 +57,8 @@ def api_auth():
 
 @app.route('/api/threads')
 def api_threads():
-    if 'group_id' not in session: return jsonify([])
-    ts = Thread.query.filter_by(group_id=session['group_id'], is_locked=False).all()
+    gid = session.get('group_id', 'default')
+    ts = Thread.query.filter_by(group_id=gid, is_locked=False).all()
     return jsonify([{"id": t.id, "title": t.title, "count": len(t.posts)} for t in ts])
 
 @app.route('/api/thread/<id>')
