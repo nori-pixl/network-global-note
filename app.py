@@ -61,12 +61,9 @@ def api_auth():
 
 @app.route('/api/threads')
 def api_threads():
-    try:
-        gid = session.get('group_id', 'default')
-        ts = Thread.query.filter_by(group_id=gid, is_locked=False).all()
-        return jsonify([{"id": t.id, "title": t.title, "count": len(t.posts)} for t in ts])
-    except:
-        return jsonify([])
+    gid = session.get('group_id', 'default')
+    ts = Thread.query.filter_by(group_id=gid, is_locked=False).all()
+    return jsonify([{"id": t.id, "title": t.title, "count": len(t.posts)} for t in ts])
 
 @app.route('/api/thread/<id>')
 def api_thread(id):
