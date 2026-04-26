@@ -6,14 +6,14 @@ from werkzeug.security import generate_password_hash, check_password_hash
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
-# 1. データベース設定（一字一句、間違いのない完全なURLを直接指定）
-# 末尾の ?sslmode=require まで含めて1行の文字列にしています
-app.config['SQLALCHEMY_DATABASE_URI'] = "postgresql://user:QMe5ISzWDVoOpTMnKLzLb43mbRqM8hWU@://render.com"
+# --- データベース接続設定 (エラーを物理的に回避する確定URL) ---
+# .singapore-postgres.render.com を省いた最短のホスト名 + ポート番号指定です
+app.config['SQLALCHEMY_DATABASE_URI'] = "postgresql://user:QMe5ISzWDVoOpTMnKLzLb43mbRqM8hWU@dpg-d7mph9a8qa3s739r7lf0-a:5432/bbs_db_03wc?sslmode=require"
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
 
-# 2. データベースの箱（モデル）
+# --- モデル定義 ---
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(50), unique=True)
@@ -33,7 +33,7 @@ class Post(db.Model):
     name = db.Column(db.String(50))
     body = db.Column(db.Text)
 
-# 3. 画面の動き（ルート設定）
+# --- 基本ルート ---
 @app.route('/')
 def home():
     return render_template('index.html')
@@ -97,7 +97,6 @@ def api_post(id):
         db.session.commit()
     return jsonify({"success": True})
 
-# 4. サーバー起動
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
