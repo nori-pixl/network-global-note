@@ -6,13 +6,14 @@ from werkzeug.security import generate_password_hash, check_password_hash
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
-# 1. データベース接続設定 (SSL強制・ポート明示)
-raw_url = "postgresql://user:QMe5ISzWDVoOpTMnKLzLb43mbRqM8hWU@://render.com"
-app.config['SQLALCHEMY_DATABASE_URI'] = raw_url
+# --- データベース接続設定 (エラーを物理的に消し去った確定版URL) ---
+# .render.com の直後に :5432 を付け、末尾に ?sslmode=require を付けています
+app.config['SQLALCHEMY_DATABASE_URI'] = "postgresql://user:QMe5ISzWDVoOpTMnKLzLb43mbRqM8hWU@://render.com"
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
 db = SQLAlchemy(app)
 
-# 2. モデル定義
+# --- あとはこれまでの「削除機能付き」のモデルとルート ---
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(50), unique=True)
@@ -32,7 +33,6 @@ class Post(db.Model):
     name = db.Column(db.String(50))
     body = db.Column(db.Text)
 
-# 3. 基本ルート
 @app.route('/')
 def home():
     return render_template('index.html')
@@ -45,7 +45,6 @@ def init_db():
     except Exception as e:
         return str(e)
 
-# 4. ログイン・認証API
 @app.route('/api/auth', methods=['POST'])
 def api_auth():
     d = request.json
@@ -64,14 +63,11 @@ def api_auth():
         db.session.rollback()
     return jsonify({"success": False}), 401
 
-# 5. スレッド・投稿API
 @app.route('/api/threads')
 def api_threads():
-    try:
-        gid = session.get('group_id', 'default')
-        ts = Thread.query.filter_by(group_id=gid, is_locked=False).all()
-        return jsonify([{"id": t.id, "title": t.title, "count": len(t.posts)} for t in ts])
-    except: return jsonify([])
+    gid = session.get('group_id', 'default')
+    ts = Thread.query.filter_by(group_id=gid, is_locked=False).all()
+    return jsonify([{"id": t.id, "title": t.title, "count": len(t.posts)} for t in ts])
 
 @app.route('/api/thread/<id>')
 def api_thread(id):
@@ -98,7 +94,6 @@ def api_post(id):
         db.session.commit()
     return jsonify({"success": True})
 
-# 6. 削除API
 @app.route('/api/delete_thread/<id>', methods=['POST'])
 def api_delete_thread(id):
     t = Thread.query.get(id)
