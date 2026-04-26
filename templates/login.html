@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>ログイン - MODERN BBS</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="{{ url_for('static', filename='js/auth.js') }}"></script>
+</head>
+<body class="flex items-center justify-center min-h-screen">
+    <div class="glass p-10 w-full max-w-md">
+        <h1 class="text-center gradient-text font-bold text-2xl mb-6">LOGIN / SIGNUP</h1>
+        
+        <form id="loginForm" class="flex flex-direction-column gap-15">
+            <div class="flex flex-direction-column">
+                <label class="post-meta">アカウント名</label>
+                <input type="text" id="username" name="username" required>
+            </div>
+            <div class="flex flex-direction-column">
+                <label class="post-meta">パスワード</label>
+                <input type="password" id="password" name="password" required>
+            </div>
+            <div class="flex items-center gap-10">
+                <input type="checkbox" id="remember_me" checked>
+                <label class="post-meta">次回から自動ログイン</label>
+            </div>
+            <button type="submit" class="btn-primary" onclick="handleLoginForm(event)">入室する</button>
+        </form>
+    </div>
+</body>
+</html>
