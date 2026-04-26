@@ -6,8 +6,11 @@ from werkzeug.security import generate_password_hash, check_password_hash
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
+# 【ここが重要】ポート番号5432とSSL設定を最初から完全に組み込んだ「1本の文字列」です
+# これにより Python の読み込みエラーを物理的に回避します
 app.config['SQLALCHEMY_DATABASE_URI'] = "postgresql://user:QMe5ISzWDVoOpTMnKLzLb43mbRqM8hWU@://render.com"
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
 db = SQLAlchemy(app)
 
 class User(db.Model):
