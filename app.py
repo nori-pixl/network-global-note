@@ -6,14 +6,15 @@ from werkzeug.security import generate_password_hash, check_password_hash
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
-# --- データベース接続設定 (ご提示のURL) ---
-raw_url = "postgresql://user:QMe5ISzWDVoOpTMnKLzLb43mbRqM8hWU@dpg-d7mph9a8qa3s739r7lf0-a/bbs_db_03wc"
-# Render用にSSL設定を強制
+# --- データベース接続設定 (ご提示の External URL) ---
+# 先頭を postgresql:// にし、末尾に SSL必須設定を加えています
+raw_url = "postgresql://user:QMe5ISzWDVoOpTMnKLzLb43mbRqM8hWU@dpg-d7mph9a8qa3s739r7lf0-a.singapore-postgres.render.com/bbs_db_03wc"
 app.config['SQLALCHEMY_DATABASE_URI'] = raw_url + "?sslmode=require"
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
 db = SQLAlchemy(app)
 
-# --- モデル定義 ---
+# --- データベースモデル ---
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(50), unique=True)
@@ -33,21 +34,20 @@ class Post(db.Model):
     name = db.Column(db.String(50))
     body = db.Column(db.Text)
 
-# --- 画面・APIルート ---
+# --- ルート設定 ---
 
-# 1. トップページ
 @app.route('/')
 def home():
     return render_template('index.html')
 
-# ★重要★ エラー解決用：ここをブラウザで開くとデータベースが完成します
+# ★ここを最初に開いてください★
 @app.route('/init_db')
 def init_db():
     try:
         db.create_all()
-        return "<h1>成功！</h1><p>データベースの準備が整いました。<br><a href='/'>掲示板に戻って入室してください。</a></p>"
+        return "<h1>成功！</h1><p>データベースの準備が整いました。<br><a href='/'>ログイン画面へ戻る</a></p>"
     except Exception as e:
-        return f"<h1>失敗</h1><p>{str(e)}</p>"
+        return f"<h1>失敗</h1><p>理由: {str(e)}</p>"
 
 @app.route('/api/auth', methods=['POST'])
 def api_auth():
@@ -55,22 +55,25 @@ def api_auth():
     try:
         user = User.query.filter_by(username=d['u']).first()
         if not user:
+            # 初回登録
             user = User(username=d['u'], password=generate_password_hash(d['p']), group_id="default")
             db.session.add(user)
             db.session.commit()
+        
         if check_password_hash(user.password, d['p']):
             session['user_id'] = user.id
             session['username'] = user.username
             session['group_id'] = user.group_id
             return jsonify({"success": True, "group_id": user.group_id})
-        return jsonify({"success": False, "error": "パスワード不一致"}), 401
+        return jsonify({"success": False, "error": "パスワードが違います"}), 401
     except Exception as e:
         db.session.rollback()
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/threads')
 def api_threads():
-    ts = Thread.query.filter_by(group_id=session.get('group_id', 'default'), is_locked=False).all()
+    if 'group_id' not in session: return jsonify([])
+    ts = Thread.query.filter_by(group_id=session['group_id'], is_locked=False).all()
     return jsonify([{"id": t.id, "title": t.title, "count": len(t.posts)} for t in ts])
 
 @app.route('/api/thread/<id>')
@@ -82,6 +85,7 @@ def api_thread(id):
 
 @app.route('/api/create_thread', methods=['POST'])
 def api_create():
+    if 'group_id' not in session: return jsonify({"success": False}), 403
     new_id = str(uuid.uuid4())[:8]
     t = Thread(id=new_id, group_id=session['group_id'], title=request.json['title'])
     db.session.add(t)
@@ -91,7 +95,7 @@ def api_create():
 @app.route('/api/post/<id>', methods=['POST'])
 def api_post(id):
     t = Thread.query.get(id)
-    if not t.is_locked and len(t.posts) < 300:
+    if t and not t.is_locked and len(t.posts) < 300:
         p = Post(thread_id=id, name=session['username'], body=request.json['body'])
         db.session.add(p)
         if len(t.posts) + 1 >= 300: t.is_locked = True
@@ -99,7 +103,6 @@ def api_post(id):
     return jsonify({"success": True})
 
 if __name__ == '__main__':
-    # 起動時にも一応実行
     with app.app_context():
         db.create_all()
     port = int(os.environ.get("PORT", 10000))
