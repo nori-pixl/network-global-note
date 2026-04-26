@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ thread.title }} - MODERN BBS</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="p-20">
+    <div class="max-w-4xl mx-auto">
+        <div class="mb-20">
+            <a href="/group/{{ session['group_id'] }}" class="post-meta" style="text-decoration: none;">← 一覧に戻る</a>
+            <h1 class="gradient-text text-2xl">{{ thread.title }}</h1>
+        </div>
+
+        <div class="glass mb-20">
+            {% for p in thread.posts %}
+            <div class="post-card">
+                <div class="post-meta">{{ loop.index }}: {{ p.name }}</div>
+                <div class="post-content">{{ p.body }}</div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <hr class="mb-20" style="opacity: 0.1;">
+
+        <!-- 300件制限の判定 -->
+        {% if thread.is_locked %}
+            <div class="glass p-20 text-center border-red">
+                <h2 style="color: #f87171;">このスレッドは300件に達したため終了しました</h2>
+                <p class="post-meta">アーカイブなし・書き込み不可</p>
+            </div>
+        {% else %}
+            <div class="glass p-20">
+                <form action="/post/{{ thread.id }}" method="POST" class="flex flex-direction-column gap-10">
+                    <input type="text" name="name" value="{{ session['username'] }}" readonly class="post-meta">
+                    <textarea name="body" rows="4" placeholder="メッセージを書き込む..." required></textarea>
+                    <button type="submit" class="btn-primary">書き込む ({{ thread.posts|length }}/300)</button>
+                </form>
+            </div>
+        {% endif %}
+    </div>
+</body>
+</html>
