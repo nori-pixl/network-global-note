@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>◎live 一覧 - MODERN BBS</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="p-20">
+    <div class="max-w-4xl mx-auto">
+        <header class="flex justify-between items-center mb-20">
+            <h1 class="gradient-text text-2xl">◎live: スレッド一覧</h1>
+            <div class="glass px-15 py-5 text-sm">Group: {{ group_id }}</div>
+        </header>
+
+        <!-- 新規スレ作成 -->
+        <div class="glass p-20 mb-20">
+            <form action="/create_thread" method="POST" class="flex gap-10">
+                <input type="text" name="title" placeholder="新しいスレッドのタイトル..." required style="flex-grow: 1;">
+                <button type="submit" class="btn-primary">スレ立て</button>
+            </form>
+        </div>
+
+        <!-- スレリスト -->
+        <div class="grid gap-10">
+            {% for t in threads %}
+            <a href="/view/{{ t.id }}" style="text-decoration: none;">
+                <div class="glass p-20 flex justify-between items-center hover-effect">
+                    <div>
+                        <span class="live-pulse"></span>
+                        <span class="font-bold">{{ t.title }}</span>
+                    </div>
+                    <div class="post-meta font-mono">{{ t.posts|length }} / 300</div>
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+</body>
+</html>
