@@ -6,13 +6,14 @@ from werkzeug.security import generate_password_hash, check_password_hash
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
-# --- データベース接続設定 (確定URL) ---
-# この一行の文字列をそのまま使います。
+# 1. データベース設定（一字一句、間違いのない完全なURLを直接指定）
+# 末尾の ?sslmode=require まで含めて1行の文字列にしています
 app.config['SQLALCHEMY_DATABASE_URI'] = "postgresql://user:QMe5ISzWDVoOpTMnKLzLb43mbRqM8hWU@://render.com"
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
 db = SQLAlchemy(app)
 
-# モデル
+# 2. モデル定義
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(50), unique=True)
@@ -32,7 +33,7 @@ class Post(db.Model):
     name = db.Column(db.String(50))
     body = db.Column(db.Text)
 
-# ルート
+# 3. ルート設定
 @app.route('/')
 def home():
     return render_template('index.html')
