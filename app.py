@@ -7,6 +7,7 @@ app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
 # --- データベース接続設定 ---
+# ここは必ず自分の「External Database URL」を貼り付けてください
 raw_url = "postgresql://user:QMe5ISzWDVoOpTMnKLzLb43mbRqM8hWU@://render.com"
 app.config['SQLALCHEMY_DATABASE_URI'] = raw_url + "?sslmode=require"
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -37,14 +38,6 @@ class Post(db.Model):
 def home():
     return render_template('index.html')
 
-@app.route('/init_db')
-def init_db():
-    try:
-        db.create_all()
-        return "<h1>成功</h1><p>DB準備完了</p>"
-    except Exception as e:
-        return f"失敗: {str(e)}"
-
 @app.route('/api/auth', methods=['POST'])
 def api_auth():
     d = request.json
@@ -59,9 +52,9 @@ def api_auth():
             session['username'] = user.username
             session['group_id'] = user.group_id
             return jsonify({"success": True, "group_id": user.group_id})
-        return jsonify({"success": False, "error": "パスワード不一致"}), 401
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+    except:
+        db.session.rollback()
+    return jsonify({"success": False}), 401
 
 @app.route('/api/threads')
 def api_threads():
@@ -95,5 +88,6 @@ def api_post(id):
     return jsonify({"success": True})
 
 if __name__ == '__main__':
-    with app.app_context(): db.create_all()
+    with app.app_context():
+        db.create_all()
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
